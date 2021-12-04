@@ -6,6 +6,7 @@
 #include <linux/uaccess.h>
 #include <linux/sched.h>
 #include <linux/sched/signal.h>
+#include <linux/poll.h>
 
 
 
@@ -199,7 +200,22 @@ static loff_t globalmem_llseek(struct file *filp, loff_t offset, int orig){
     return ret;
 }
 
-
+//add poll function 
+static unsigned int globalmem_poll(struct file *filp,poll_table *wait){
+    unsigned int mask = 0;
+    struct globalmem_dev *dev = filp->private_data;
+    mutex_lock(&dev->mutex); // determine the state of write and read, it needs mutex.
+    poll_wait(filp,&dev->r_wait,wait);
+    poll_wait(filp,&dev->w_wait,wait);
+    if(dev->current_len!=0){
+        mask |=POLLIN |POLLRDNORM;
+    }
+    if(dev->current_len!=GLOBALMEM_SIZE){
+        mask |= POLLOUT | POLLWRNORM;
+    }
+    mutex_unlock(&dev->mutex);
+    return mask;
+}
 // define the file operations, and assign them to a struct file_operations.
 static const struct file_operations globalmem_fops={
     .owner = THIS_MODULE,
@@ -209,6 +225,7 @@ static const struct file_operations globalmem_fops={
     .unlocked_ioctl = globalmem_ioctl,
     .open = globalmem_open,
     .release = globalmem_release,
+    .poll = globalmem_poll,
 };
 
 static void globalmem_setup_cdev(struct globalmem_dev *dev, int index){
